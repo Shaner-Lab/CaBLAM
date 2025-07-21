@@ -1,15 +1,16 @@
 #! /usr/bin/env python3
 """
-titration_fit_global.py  (v3.25_fixed, 2025-07-09)
+titration_fit_global.py  (v4.0, 2025-07-21)
 
 Key features
 ============
 • Global Hill fits for any number of clones (one CSV per clone).
 • Clone colours ordered by EC50, colour-map tweakable (sat/val).
-• NEW: Per‑clone **marker shapes / fill styles** via `--markers` and `--fills`.
+• Per‑clone **marker shapes / fill styles** via `--markers` and `--fills`.
 • Options for nM or pCa x-axis, font override, legend & point sizing.
 • Per-clone workbooks + global summary workbook.
 • Confidence-band uses full covariance propagation (ymin, EC50, nH).
+• Direct contrast calculation from low-Ca data points for realistic uncertainties.
 • Fit-text block: adjustable font size, line spacing, optional name,
   Hill coefficient shown as *n*ₕ.
 • PDFs embed editable text thanks to matplotlib fonttype=42.
@@ -22,7 +23,7 @@ import itertools
 import pathlib
 import sys
 import warnings
-from typing import List
+from typing import List, Union, Optional
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -36,6 +37,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import LogLocator, NullFormatter
 from scipy.optimize import curve_fit
+from scipy import stats
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -55,7 +57,7 @@ def load_clone(csv: pathlib.Path) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True)
 
 
-def pick_engine(requested: str | None):
+def pick_engine(requested: Optional[str]):
     """Return an available Excel writer engine or None."""
     if requested == "none":
         return None
@@ -84,6 +86,52 @@ def fit_hill(x, y):
     p0 = [0.0, np.median(x), 1.0]
     bounds = ([-0.5, 1e-3, 0], [0.5, np.max(x) * 1e3, 8])
     return curve_fit(hill3, x, y, p0=p0, bounds=bounds, maxfev=100_000)
+
+
+def calculate_direct_contrast(data, ca_threshold=10.0):
+    """
+    Calculate contrast directly from data points below a calcium threshold.
+    
+    Parameters:
+    -----------
+    data : pd.DataFrame
+        DataFrame with 'Ca_nM' and 'signal_norm' columns
+    ca_threshold : float
+        Maximum calcium concentration to consider for baseline (nM)
+        
+    Returns:
+    --------
+    dict with contrast, delta, and their uncertainties
+    """
+    # Filter data points below threshold
+    low_ca_data = data[data['Ca_nM'] <= ca_threshold]
+    
+    if len(low_ca_data) == 0:
+        return None
+    
+    # Calculate mean and standard error of the mean for low-Ca points
+    low_ca_signals = low_ca_data['signal_norm'].values
+    mean_signal = np.mean(low_ca_signals)
+    sem_signal = stats.sem(low_ca_signals)
+    
+    # Calculate contrast (1/mean) and its uncertainty using error propagation
+    contrast = 1 / mean_signal
+    contrast_se = sem_signal / (mean_signal ** 2)
+    
+    # Calculate delta ((1-mean)/mean) and its uncertainty
+    delta = (1 - mean_signal) / mean_signal
+    delta_se = sem_signal / (mean_signal ** 2)
+    
+    return {
+        'contrast': contrast,
+        'contrast_se': contrast_se,
+        'delta': delta,
+        'delta_se': delta_se,
+        'mean_signal': mean_signal,
+        'sem_signal': sem_signal,
+        'n_low_ca_points': len(low_ca_signals),
+        'ca_threshold': ca_threshold
+    }
 
 
 def ci_band(xe: np.ndarray, popt, pcov):
@@ -116,6 +164,10 @@ def generate_filename_tags(a):
         tags.append("am")
     if a.auto_lines:
         tags.append("al")
+    
+    # Hill contrast flag (only if explicitly requested)
+    if a.use_hill_contrast:
+        tags.append("hill")
     
     # Figure size (most important)
     if a.fig_w_mm is not None or a.fig_h_mm is not None:
@@ -312,7 +364,7 @@ def calculate_optimal_line_weights(fig_w, fig_h, line_scale=1.0):
 # ───────────────────────────── CLI ───────────────────────────────
 def cli():
     ap = argparse.ArgumentParser(
-        description="Global Hill fits for multiple clones (CSV inputs)."
+        description="Global Hill fits for multiple clones (CSV inputs) with direct contrast calculation."
     )
     ap.add_argument("csv_files", nargs="+", type=pathlib.Path)
     ap.add_argument("--out-prefix", default="titration_panel")
@@ -377,6 +429,12 @@ def cli():
                     help="Predefined marker sets: basic (o,s,D), geometric (o,s,D,^,v,<,>), arrows (^,v,<,>,P), stars (*,h,H,8), hollow (o,s,D with hollow variants)")
     ap.add_argument("--fills", default="full", 
                     help="Comma-separated fill styles (full, left, right, bottom, top, none) to cycle (note: fillstyle not supported in scatter plots)")
+    
+    # ── Direct contrast options ───────────────────────────────────
+    ap.add_argument("--ca-threshold", type=float, default=10.0,
+                    help="Maximum Ca2+ concentration for baseline calculation (nM, default: 10.0)")
+    ap.add_argument("--use-hill-contrast", action="store_true", default=False,
+                    help="Use Hill fit parameters for contrast calculation (less accurate uncertainties)")
     
     return ap.parse_args()
 
@@ -443,7 +501,35 @@ def main():
         data = load_clone(csv)
         x = data["Ca_nM"].to_numpy(float)
         y = data["signal_norm"].to_numpy(float)
+        
+        # Standard Hill fit
         popt, pcov = fit_hill(x, y)
+        ymin, EC50, nH = popt
+        ymin_se, EC50_se, nH_se = np.sqrt(np.diag(pcov))
+        
+        if a.use_hill_contrast:
+            # Use Hill fit parameters for contrast calculation (less accurate)
+            contrast = 1 / ymin
+            contrast_se = ymin_se / ymin**2
+            delta = (1 - ymin) / ymin
+            delta_se = ymin_se / ymin**2
+            direct_result = None
+        else:
+            # Calculate contrast directly from low-Ca data points (default, more accurate)
+            direct_result = calculate_direct_contrast(data, a.ca_threshold)
+            if direct_result is None:
+                print(f"⚠  No data points below {a.ca_threshold} nM for {csv.name}, using Hill fit method")
+                contrast = 1 / ymin
+                contrast_se = ymin_se / ymin**2
+                delta = (1 - ymin) / ymin
+                delta_se = ymin_se / ymin**2
+                direct_result = None
+            else:
+                contrast = direct_result['contrast']
+                contrast_se = direct_result['contrast_se']
+                delta = direct_result['delta']
+                delta_se = direct_result['delta_se']
+        
         clones.append(
             dict(
                 csv=csv,
@@ -453,9 +539,20 @@ def main():
                 n_trials=data["run"].nunique(),
                 popt=popt,
                 pcov=pcov,
+                ymin=ymin,
+                ymin_se=ymin_se,
+                EC50=EC50,
+                EC50_se=EC50_se,
+                nH=nH,
+                nH_se=nH_se,
+                contrast=contrast,
+                contrast_se=contrast_se,
+                delta=delta,
+                delta_se=delta_se,
+                direct_result=direct_result
             )
         )
-    clones.sort(key=lambda d: d["popt"][1])  # sort by EC50
+    clones.sort(key=lambda d: d["EC50"])  # sort by EC50
 
     cmap = plt.colormaps[a.palette]
     positions = np.linspace(0, 1, len(clones)) if len(clones) > 1 else [0.5]
@@ -539,13 +636,16 @@ def main():
         y_norm = info["y"]
         popt = info["popt"]
         pcov = info["pcov"]
-        ymin, EC50, nH = popt
-        ymin_se, EC50_se, nH_se = np.sqrt(np.diag(pcov))
-
-        contrast = 1 / ymin
-        contrast_se = ymin_se / ymin**2
-        delta = (1 - ymin) / ymin
-        delta_se = ymin_se / ymin**2
+        ymin = info["ymin"]
+        ymin_se = info["ymin_se"]
+        EC50 = info["EC50"]
+        EC50_se = info["EC50_se"]
+        nH = info["nH"]
+        nH_se = info["nH_se"]
+        contrast = info["contrast"]
+        contrast_se = info["contrast_se"]
+        delta = info["delta"]
+        delta_se = info["delta_se"]
 
         # scatter points with custom markers
         x_plot = to_pca(x_nM) if a.x_units == "pCa" else x_nM
@@ -597,19 +697,37 @@ def main():
             wb_path = pathlib.Path(f"{a.out_prefix}_{clone_name}.xlsx")
             with pd.ExcelWriter(wb_path, engine=engine) as xl:
                 info["data"].to_excel(xl, "raw", index=False)
-                pd.DataFrame(
-                    {
-                        "parameter": [
-                            "ymin",
-                            "EC50_nM",
-                            "Hill_n",
-                            "Contrast_Fmax/Fmin",
-                            "DeltaF_over_F0",
-                        ],
-                        "value": [ymin, EC50, nH, contrast, delta],
-                        "stderr": [ymin_se, EC50_se, nH_se, contrast_se, delta_se],
-                    }
-                ).to_excel(xl, "fit_params", index=False)
+                
+                # Create fit parameters DataFrame
+                fit_params_data = {
+                    "parameter": [
+                        "ymin",
+                        "EC50_nM",
+                        "Hill_n",
+                        "Contrast_Fmax/Fmin",
+                        "DeltaF_over_F0",
+                    ],
+                    "value": [ymin, EC50, nH, contrast, delta],
+                    "stderr": [ymin_se, EC50_se, nH_se, contrast_se, delta_se],
+                }
+                
+                # Add direct contrast info if used
+                if not a.use_hill_contrast and info["direct_result"] is not None:
+                    fit_params_data["parameter"].extend([
+                        "mean_low_ca_signal",
+                        "sem_low_ca_signal",
+                        "n_low_ca_points",
+                        "ca_threshold_nM"
+                    ])
+                    fit_params_data["value"].extend([
+                        info["direct_result"]["mean_signal"],
+                        info["direct_result"]["sem_signal"],
+                        info["direct_result"]["n_low_ca_points"],
+                        info["direct_result"]["ca_threshold"]
+                    ])
+                    fit_params_data["stderr"].extend([np.nan, np.nan, np.nan, np.nan])
+                
+                pd.DataFrame(fit_params_data).to_excel(xl, "fit_params", index=False)
             print(f"Workbook → {wb_path}")
         elif a.no_excel:
             print("⚠  Excel output disabled with --no-excel flag.")
