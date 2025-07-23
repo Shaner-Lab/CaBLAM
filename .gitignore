@@ -1,0 +1,73 @@
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows system files
+desktop.ini
+$RECYCLE.BIN/
+
+# MATLAB files
+*.asv
+*.fig
+*.mat
+
+# Python files (if any Python code is added)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.cache
+
+# Large data files (uncomment if you want to exclude these)
+# *.csv
+# *.xlsx
+# *.zip
+# *.pdf
+# *.png
+# *.jpg
+# *.jpeg
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/ 
