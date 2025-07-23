@@ -99,7 +99,7 @@ python3 titration_fit_global.py data/*.csv --out-prefix example --fit-text --aut
 - Individual clone workbooks:
   - `example_af_am_al_ft_CaBLAM.xlsx` (7.7 KB)
   - `example_af_am_al_ft_CaBLAM_294W.xlsx` (6.9 KB)
-  - `example_af_am_al_ft_CaBLAM_390W.xlsx` (6.9 KB)
+  - `example_af_am_al_ft_CaBLAM_332W.xlsx` (6.9 KB)
   - `example_af_am_al_ft_CaMBI.xlsx` (8.0 KB)
   - `example_af_am_al_ft_GeNL(Ca2+)_480.xlsx` (8.7 KB)
 
@@ -126,7 +126,7 @@ This makes it easy to identify which settings were used for each analysis.
 | Clone | EC50 (nM) | Contrast | Contrast SE | ΔF/F0 | ΔF/F0 SE |
 |-------|-----------|----------|-------------|-------|----------|
 | CaMBI | 59.6 ± 5.9 | 4.73 | 0.29 | 3.73 | 0.29 |
-| CaBLAM_390W | 281.1 ± 9.3 | 68.0 | 5.3 | 67.0 | 5.3 |
+| CaBLAM_332W | 281.1 ± 9.3 | 68.0 | 5.3 | 67.0 | 5.3 |
 | CaBLAM | 439.3 ± 13.9 | 83.0 | 9.4 | 82.0 | 9.4 |
 | GeNL(Ca2+) | 457.1 ± 20.3 | 3.56 | 0.33 | 2.56 | 0.33 |
 | CaBLAM_294W | 3066.5 ± 94.6 | 748.1 | 27.2 | 747.1 | 27.2 |
@@ -227,7 +227,7 @@ A higher number of low-Ca points provides more robust baseline estimation.
 This directory includes five example calcium sensor datasets:
 1. **CaBLAM.csv** - Original CaBLAM sensor
 2. **CaBLAM_294W.csv** - CaBLAM with W294 mutation  
-3. **CaBLAM_390W.csv** - CaBLAM with W390 mutation
+3. **CaBLAM_332W.csv** - CaBLAM with W332 mutation
 4. **CaMBI.csv** - CaMBI sensor
 5. **GeNL(Ca2+)_480.csv** - GeNL calcium sensor
 

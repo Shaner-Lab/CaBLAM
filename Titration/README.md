@@ -20,7 +20,7 @@ Titration/
 ├── data/                      # Input datasets
 │   ├── CaBLAM.csv
 │   ├── CaBLAM_294W.csv
-│   ├── CaBLAM_390W.csv
+│   ├── CaBLAM_332W.csv
 │   ├── CaMBI.csv
 │   └── GeNL(Ca2+)_480.csv
 ├── examples/                  # Example outputs
